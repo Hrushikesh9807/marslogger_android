@@ -190,11 +190,15 @@ class CameraCaptureActivityBase extends Activity implements SurfaceTexture.OnFra
                 new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss");
         String folderName = dateFormat.format(new Date());
         String dir1 = getFilesDir().getAbsolutePath();
-        String dir2 = Environment.getExternalStorageDirectory().
-                getAbsolutePath() + File.separator + "mars_logger";
+        File sdCardDir = new File(Environment.getExternalStorageDirectory(), "mars logger");
+        String dir2 = sdCardDir.getAbsolutePath();
 
-        String dir3 = getExternalFilesDir(
-                Environment.getDataDirectory().getAbsolutePath()).getAbsolutePath();
+        File appSpecificExternal = getExternalFilesDir(
+                Environment.getDataDirectory().getAbsolutePath());
+        if (appSpecificExternal == null) {
+            appSpecificExternal = getFilesDir();
+        }
+        String dir3 = appSpecificExternal.getAbsolutePath();
         Timber.d("dir 1 %s\ndir 2 %s\ndir 3 %s", dir1, dir2, dir3);
         // dir1 and dir3 are always available for the app even the
         // write external storage permission is not granted.
@@ -203,9 +207,30 @@ class CameraCaptureActivityBase extends Activity implements SurfaceTexture.OnFra
         // fails, like you denied it. You must go into Settings, apps, select
         // your application and flip the permission switch on."
         // ref: https://stackoverflow.com/questions/40087355/android-mkdirs-not-working
-        String outputDir = dir3 + File.separator + folderName;
-        (new File(outputDir)).mkdirs();
-        return outputDir;
+
+        File baseDir = sdCardDir;
+        if (!baseDir.exists() && !baseDir.mkdirs()) {
+            Timber.w("Failed to create Mars Logger directory on SD card, using app-specific external directory instead.");
+            baseDir = appSpecificExternal;
+        }
+
+        File outputDirFile = new File(baseDir, folderName);
+        if (!outputDirFile.exists() && !outputDirFile.mkdirs()) {
+            Timber.w("Failed to create timestamped directory %s, falling back to app-specific external directory.",
+                    outputDirFile.getAbsolutePath());
+            File fallbackDir = new File(appSpecificExternal, folderName);
+            if (!fallbackDir.exists() && !fallbackDir.mkdirs()) {
+                File internalFallback = new File(getFilesDir(), folderName);
+                if (!internalFallback.exists() && !internalFallback.mkdirs()) {
+                    Timber.e("Failed to create output directory at %s", internalFallback.getAbsolutePath());
+                }
+                outputDirFile = internalFallback;
+            } else {
+                outputDirFile = fallbackDir;
+            }
+        }
+
+        return outputDirFile.getAbsolutePath();
     }
 
     // updates mCameraPreviewWidth/Height
